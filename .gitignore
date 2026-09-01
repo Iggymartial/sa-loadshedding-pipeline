@@ -13,3 +13,7 @@ target/
 
 # OS
 .DS_Store
+
+# Note: data/raw/ is intentionally NOT ignored.
+# Keeping sample raw extracts in the repo lets a reviewer see real
+# pipeline output without having to run it themselves first.
