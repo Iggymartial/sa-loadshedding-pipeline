@@ -15,6 +15,7 @@ history). Right now it covers just the extraction layer. Planned next:
 
 - [x] Extract national load shedding status from the EskomSePush API
 - [x] Persist raw JSON to a local "data lake" folder, timestamped per run
+- [x] Confirmed working end-to-end against the live API (v3.1)
 - [ ] MySQL schema + load step
 - [ ] Pandas transformation/cleaning layer
 - [ ] Dockerise the pipeline
