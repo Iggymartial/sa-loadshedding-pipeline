@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: loadshedding_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-loadshedding}
+      MYSQL_USER: ${MYSQL_USER:-pipeline_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-pipeline_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Anything in docker-entrypoint-initdb.d runs automatically the
+      # FIRST time the container starts with an empty data directory.
+      # This is what applies schema.sql without any manual step.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mysql_data:
