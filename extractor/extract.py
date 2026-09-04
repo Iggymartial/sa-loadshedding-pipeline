@@ -25,8 +25,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_BASE_URL = os.getenv("ESP_API_BASE_URL", "https://developer.sepush.co.za/business/3.1")
 API_TOKEN = os.getenv("ESP_API_TOKEN")
+API_BASE_URL = os.getenv("ESP_API_BASE_URL", "https://developer.sepush.co.za/business/3.1")
 
 # Raw extracts land here, one timestamped file per run.
 RAW_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
