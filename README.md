@@ -16,7 +16,7 @@ history). Right now it covers just the extraction layer. Planned next:
 - [x] Extract national load shedding status from the EskomSePush API
 - [x] Persist raw JSON to a local "data lake" folder, timestamped per run
 - [x] Confirmed working end-to-end against the live API (v3.1)
-- [ ] MySQL schema + load step
+- [x] MySQL schema + load step
 - [ ] Pandas transformation/cleaning layer
 - [ ] Dockerise the pipeline
 - [ ] Airflow DAG to schedule extraction hourly
@@ -62,16 +62,27 @@ Airflow DAG orchestrates extract -> transform -> load, scheduled hourly
 
 1. Register for a free API token: https://eskomsepush.gumroad.com/l/api
 2. Copy `.env.example` to `.env` and add your token
-3. Install dependencies:
+3. Start MySQL (schema applies automatically on first run):
+   ```
+   docker compose up -d
+   ```
+4. Install extraxtor dependencies and run it:
    ```
    cd extractor
    pip install -r requirements.txt
-   ```
-4. Run the extractor:
-   ```
    python extract.py
    ```
-5. Check `data/raw/` for the saved JSON extract
+5. Install loader dependencies and load the extracted data into MySQL:
+   ```
+   cd ../loader
+   pip install -r requirements.txt
+   python load.py
+   ```
+6. Check the data landed correctly:
+   ```
+   docker exec -it loadshedding_mysql mysql -u pipeline_user -p loadshedding -e "SELECT * FROM stage_readings;"
+   ```
+   (password is whatever you set for `MYSQL_PASSWORD` in `.env`)
 
 ## Design decisions
 
