@@ -59,5 +59,10 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
     records_fetched INT NOT NULL DEFAULT 0,
     raw_file VARCHAR(255),
     error_message TEXT,
+    -- Separate from error_message: this run can succeed overall while
+    -- still having something worth flagging, e.g. "2 rows failed
+    -- validation and were skipped". error_message is reserved for
+    -- actual run failures.
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
