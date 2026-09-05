@@ -120,3 +120,26 @@ The failed attempt is still visible as a `failure` row in
 `ingestion_runs` - proof the audit table does its job: a real failure
 happened, was logged with its actual error message, and the fix is
 traceable against it.
+
+## Week 3, incident: Docker couldn't reach Docker Hub
+
+`docker compose up -d` failed trying to pull `mysql:8.0`, with an error
+about failing to resolve `registry-1.docker.io`. Debugged this by
+isolating layers, the same technique used for the earlier API incident:
+
+1. `docker pull hello-world` failed identically - ruled out anything
+   specific to the MySQL image (size, tag, etc).
+2. `ping 8.8.8.8` (a raw IP, no hostname lookup involved) succeeded with
+   normal latency - confirmed the actual internet connection was fine.
+3. `ping`/`nslookup` against an actual hostname both failed - narrowed
+   the problem specifically to DNS resolution, not connectivity.
+4. `ipconfig /flushdns` followed by a fresh `nslookup` resolved
+   correctly - a stale/corrupted DNS cache entry was the root cause.
+
+Fix required no code or config change at all - it was an environment
+issue on the development machine, not the project. Documenting it
+anyway because "the pipeline broke and here's exactly how I diagnosed
+it" is a legitimate demo/Q&A story, and the diagnostic method (test the
+smallest possible piece, rule things out one layer at a time) is the
+same one used for the API version incident earlier - a pattern worth
+having ready to describe, not just the individual fixes.
