@@ -16,12 +16,12 @@ history). Right now it covers just the extraction layer. Planned next:
 - [x] Extract national load shedding status from the EskomSePush API
 - [x] Persist raw JSON to a local "data lake" folder, timestamped per run
 - [x] Confirmed working end-to-end against the live API (v3.1)
+- [x] Pandas transformation/cleaning layer
 - [x] MySQL schema + load step
-- [ ] Pandas transformation/cleaning layer
 - [ ] Dockerise the pipeline
 - [ ] Airflow DAG to schedule extraction hourly
 - [ ] Java (Spring Boot) REST API to serve processed data
-- [ ] Data quality checks + ingestion logging
+- [x] Data quality checks + ingestion logging
 
 ## Why this data source
 
@@ -47,10 +47,18 @@ EskomSePush /status API
 Python extractor  ->  data/raw/  (timestamped raw JSON, untouched)
         |
         v
-Python transform (pandas: clean, validate, reshape)
+Python transform (pandas: flatten, validate against data quality rules)
+        |
+        +--> data/quality_log.csv  (flagged rows, with reasons)
         |
         v
-MySQL (normalised schema: stage_readings, ingestion_runs)
+data/processed/  (validated Parquet files)
+        |
+        v
+Python loader (only inserts rows that passed validation)
+        |
+        v
+MySQL (normalised schema: sources, stage_readings, ingestion_runs)
         |
         v
 Java (Spring Boot) REST API  ->  serves processed data
@@ -66,23 +74,32 @@ Airflow DAG orchestrates extract -> transform -> load, scheduled hourly
    ```
    docker compose up -d
    ```
-4. Install extraxtor dependencies and run it:
+4. Extract a reading:
    ```
    cd extractor
    pip install -r requirements.txt
    python extract.py
    ```
-5. Install loader dependencies and load the extracted data into MySQL:
+5. Transform and validate it:
+   ```
+   cd ../transform
+   pip install -r requirements.txt
+   python transform.py
+   ```
+6. Load the validated data into MySQL:
    ```
    cd ../loader
    pip install -r requirements.txt
    python load.py
    ```
-6. Check the data landed correctly:
+7. Check the data landed correctly:
    ```
    docker exec -it loadshedding_mysql mysql -u pipeline_user -p loadshedding -e "SELECT * FROM stage_readings;"
    ```
    (password is whatever you set for `MYSQL_PASSWORD` in `.env`)
+
+   If anything got flagged along the way, check `data/quality_log.csv`
+   to see exactly what failed and why.
 
 ## Design decisions
 
