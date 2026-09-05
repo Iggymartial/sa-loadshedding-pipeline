@@ -1,2 +1,4 @@
 mysql-connector-python==8.4.0
 python-dotenv==1.0.1
+pandas==2.2.3
+pyarrow==18.1.0
