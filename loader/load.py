@@ -111,17 +111,18 @@ def main() -> int:
     total_skipped = 0
 
     for filepath in processed_files:
-        df = pd.read_parquet(filepath)
-        if df.empty:
-            continue
-
-        raw_file = df["raw_file"].iloc[0]
-
-        if already_loaded(cursor, raw_file):
-            total_skipped += 1
-            continue
-
         try:
+            df = pd.read_parquet(filepath)
+            if df.empty:
+                continue
+
+            raw_file = df["raw_file"].iloc[0]
+
+            if already_loaded(cursor, raw_file):
+                total_skipped += 1
+                continue
+
+        
             inserted = insert_valid_rows(cursor, df, raw_file)
             invalid_count = len(df) - inserted
             notes = f"{invalid_count} row(s) failed validation and were skipped" if invalid_count else None
@@ -136,9 +137,12 @@ def main() -> int:
             print(msg)
         except Exception as e:
             conn.rollback()
-            log_ingestion_run(cursor, "failure", 0, raw_file, error_message=str(e))
+            # If we failed before even reading raw_file out of the
+            # dataframe (e.g. the parquet file itself is corrupt), fall
+            # back to the filename so the failure is still traceable.
+            log_ingestion_run(cursor, "failure", 0, filepath.name, error_message=str(e))
             conn.commit()
-            print(f"Failed to load {raw_file}: {e}", file=sys.stderr)
+            print(f"Failed to load {filepath.name}: {e}", file=sys.stderr)
 
     cursor.close()
     conn.close()
