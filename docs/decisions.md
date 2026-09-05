@@ -143,3 +143,28 @@ it" is a legitimate demo/Q&A story, and the diagnostic method (test the
 smallest possible piece, rule things out one layer at a time) is the
 same one used for the API version incident earlier - a pattern worth
 having ready to describe, not just the individual fixes.
+
+## Automated tests, added before starting the pandas rewrite
+
+**Decision: write a unit test suite for extract.py and load.py before touching either for the transform layer.**
+Reasoning: changing code without tests means any regression is only
+caught by manual re-testing, which is slow and easy to skip. Writing
+tests first means the pandas rewrite of `load.py` can be checked
+against the same expectations the pre-pandas version had to meet.
+
+**Decision: mock the API and the database in every test - no real network calls, no real MySQL connection.**
+Reasoning: unit tests should be fast, free to run, and not depend on
+having a valid API token or a running database container. Testing
+against the *real* API and *real* MySQL already happened manually
+earlier in this log - that's integration testing, a different
+concern from unit testing the logic in isolation.
+
+**Proof the tests aren't just decorative:** deliberately reintroduced
+the exact timezone bug that was fixed earlier (reverted
+`stage_updated_utc` back to the raw, unconverted string) and reran the
+suite. `test_load_file_converts_timezone_offset_to_utc_correctly`
+failed immediately, with a clear assertion error showing the raw string
+where a converted `datetime` was expected. Restored the fix and
+confirmed all 21 tests passed again. This is the difference between a
+test that happens to pass and a test that actually verifies something:
+it has to be capable of failing when the bug it targets is present.
