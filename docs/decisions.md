@@ -230,3 +230,46 @@ via research that pyarrow only shipped prebuilt Python 3.13 wheels from
 version 18.0.0 onward - the original pin simply predated that. Fixed by
 bumping to `18.1.0`, checked against PyPI's actual published version
 list before recommending it rather than guessing a number.
+
+## Updated tests for the pandas-based load.py, and a bug found in the process
+
+**Decision: rewrite test_load.py from scratch rather than patch the old one.**
+Reasoning: the pandas rewrite changed load.py's actual functions -
+`load_file()` (JSON-based) no longer exists; it's replaced by
+`insert_valid_rows()` (DataFrame-based). Trying to adapt the old tests
+line-by-line would have hidden how different the new code's contract
+actually is. Writing fresh tests against the new function signatures
+was more honest about what actually needed covering.
+
+**Bug found while writing the new tests: `pd.read_parquet()` was called
+outside the try/except block in `main()`.**
+While designing a test for "what happens if a processed file is
+corrupt", I traced through the actual code path and noticed the parquet
+read happened before the try/except that was supposed to catch
+per-file failures. Proved this concretely before touching anything:
+wrote a corrupt file, mocked a working MySQL connection, and called
+`main()` directly - it crashed with an unhandled `ArrowInvalid`
+exception instead of logging a failure and continuing to the next file.
+
+This was a real regression introduced during the pandas rewrite: the
+pre-pandas `load.py` wrapped its equivalent read (`load_file()`) inside
+the try/except, so this exact failure mode was already handled before -
+it just didn't get carried over when the code changed shape.
+
+Fix: widened the try/except to cover the entire per-file body (read,
+raw_file extraction, already_loaded check, insert), so any failure at
+any point in processing one file is caught, rolled back, logged with
+the filename as a fallback identifier, and the loop moves on to the
+next file. Re-ran the same corrupt-file scenario after the fix and
+confirmed: the corrupt file logs a `failure` row and is skipped, and a
+second, valid file in the same run still loads successfully.
+
+Locked this in as `test_main_continues_after_one_corrupt_processed_file`,
+which fails against the pre-fix code and passes against the fix -
+confirmed both directions, not just that the final version happens to
+pass.
+
+Takeaway: writing tests isn't just about proving code that already
+works still works - tracing through "what should happen in this edge
+case" while writing a test is itself a way of finding bugs before a
+user (or a demo audience) does.
