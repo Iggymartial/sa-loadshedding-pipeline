@@ -168,3 +168,65 @@ where a converted `datetime` was expected. Restored the fix and
 confirmed all 21 tests passed again. This is the difference between a
 test that happens to pass and a test that actually verifies something:
 it has to be capable of failing when the bug it targets is present.
+
+## Week 5: transform/validation layer
+
+**Decision: introduce a distinct transform stage instead of validating inline in the loader.**
+Reasoning: extraction, validation, and loading are three different
+concerns, and keeping them as separate scripts with a file handed
+between them (raw JSON -> processed Parquet -> MySQL) means each stage
+can be run, tested, and reasoned about independently. It also means
+`data/processed/` becomes a permanent, inspectable record of exactly
+what the pipeline decided was valid at each point in time.
+
+**Decision: use Parquet, not CSV, for the processed output.**
+Reasoning: Parquet is columnar and typed (Week 2 material applied) - a
+`stage` column stays an integer and `stage_updated` stays a real
+datetime on disk, rather than everything flattening to text the way CSV
+does. That avoids re-parsing types every time the file is read again.
+
+**Decision: invalid rows are flagged and logged, never silently dropped.**
+Reasoning: silently discarding bad data hides real problems (a broken
+API response, a bug in extraction) behind an innocent-looking pipeline
+that "just works". Every failed row is written to `data/quality_log.csv`
+with the specific reason it failed, so a reviewer - or future me - can
+see exactly what was rejected and why, not just that something was.
+
+**Decision: a run with flagged rows is still logged as `success` in
+`ingestion_runs`, with details in a separate `notes` column.**
+Reasoning: `error_message` should mean "the run itself broke" (a crash,
+a connection failure). Skipping bad data is a different thing entirely
+- the pipeline worked correctly, the *data* had a problem. Conflating
+those two would make it harder to tell, at a glance, whether the
+pipeline needs debugging or the upstream data source does.
+
+**Tested with a deliberately broken input, not just clean data.**
+Built one raw file with a stage value of 12 (outside the valid 0-8
+range) and a missing `stage_updated`. Ran the full transform -> load
+flow against it alongside a normal file, and confirmed: the bad file's
+2 rows were both flagged with specific, correct reasons in
+`quality_log.csv`; zero rows from that file reached `stage_readings`;
+the good file's 2 rows loaded normally; and `ingestion_runs` correctly
+recorded a `success` status with a note explaining the 2 skipped rows.
+Testing against intentionally bad data, not just the happy path, is
+what actually proves a validation layer works rather than just
+compiles.
+
+## Full pipeline confirmed working end-to-end, real data
+
+Ran extract -> transform -> load in sequence against the real
+EskomSePush API on the actual development machine. Result: 5 separate
+extraction runs, all validated (0 rows flagged - the data has
+genuinely stayed at stage 0 throughout testing), all loaded into
+MySQL, all 5 recorded as `success` in `ingestion_runs`. This is the
+first time all three stages ran back-to-back against live data rather
+than synthetic test fixtures.
+
+**Incident: pyarrow 17.0.0 failed to install on Python 3.13.**
+Pip tried to build pyarrow from source (no prebuilt wheel existed for
+that combination) and the build itself failed with an unrelated
+`pkg_resources` error, not something specific to this project. Confirmed
+via research that pyarrow only shipped prebuilt Python 3.13 wheels from
+version 18.0.0 onward - the original pin simply predated that. Fixed by
+bumping to `18.1.0`, checked against PyPI's actual published version
+list before recommending it rather than guessing a number.
