@@ -77,5 +77,43 @@ services:
 
     command: ["python", "loader/load.py"]
 
+  # ---------------------------------------------------------------------
+  # Airflow, running in STANDALONE mode: one container, SQLite metadata
+  # store, scheduler + webserver + triggerer all in one process. This is
+  # officially supported for local development/learning (not
+  # production) - the full multi-service Celery quick-start (Postgres +
+  # Redis + separate workers) would be considerable overkill for a
+  # single scheduled DAG on a solo project.
+  # ---------------------------------------------------------------------
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: sa-loadshedding-airflow:latest
+    container_name: loadshedding_airflow
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    ports:
+      # 8081, not 8080 - the Java API already uses 8080 on the host.
+      - "8081:8080"
+    volumes:
+      - ./airflow_dags:/opt/airflow/dags
+      # Pipeline data - same host folder every other stage already
+      # reads/writes, so runs triggered by Airflow show up in the exact
+      # same data/raw and data/processed you've been inspecting all along.
+      - ./data:/opt/airflow/pipeline/data
+      # Airflow's own state (SQLite db, logs, config) persists across
+      # container restarts via a named volume, separate from our
+      # pipeline's data.
+      - airflow_home:/opt/airflow
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: standalone
+
 volumes:
   mysql_data:
+  airflow_home:
