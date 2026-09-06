@@ -22,5 +22,60 @@ services:
       timeout: 5s
       retries: 10
 
+  # ---------------------------------------------------------------------
+  # Pipeline stages below. Each is a ONE-SHOT task, not a long-running
+  # server like mysql - it runs its script to completion and exits. Run
+  # them explicitly with `docker compose run --rm <name>`, not
+  # `docker compose up`, which is meant for persistent services.
+  #
+  # All three share the SAME built image (same Dockerfile, same
+  # dependencies) - only the `command:` differs. This also mirrors
+  # exactly how Airflow will call these same scripts as separate tasks
+  # in the next step: one script, one discrete unit of work.
+  # ---------------------------------------------------------------------
+
+  extractor:
+    build: .
+    image: sa-loadshedding-pipeline:latest
+    container_name: loadshedding_extractor
+    env_file:
+      - .env
+    volumes:
+      # Mounting ./data means files written inside the container land
+      # in your real project folder too - the same data/raw/ you've
+      # been inspecting locally all along, not something trapped
+      # inside a container's private filesystem.
+      - ./data:/app/data
+    command: ["python", "extractor/extract.py"]
+
+  transform:
+    image: sa-loadshedding-pipeline:latest
+    container_name: loadshedding_transform
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["python", "transform/transform.py"]
+
+  loader:
+    image: sa-loadshedding-pipeline:latest
+    container_name: loadshedding_loader
+    env_file:
+      - .env
+    environment:
+      # Overrides whatever MYSQL_HOST is set to in .env (127.0.0.1,
+      # correct for running load.py directly on your machine). Inside
+      # this Docker network, "mysql" is the correct hostname - Docker
+      # Compose gives every service a DNS name matching its service
+      # name, resolvable only from other containers on the same network.
+      MYSQL_HOST: mysql
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    command: ["python", "loader/load.py"]
+
 volumes:
   mysql_data:

@@ -1,0 +1,14 @@
+# Keep the Docker build context small and avoid baking secrets or
+# irrelevant files (the Java API, test files, docs, local data) into
+# the Python pipeline image.
+.git
+.env
+data/
+api/
+tests/
+docs/
+*.md
+__pycache__/
+*.pyc
+.venv/
+venv/
