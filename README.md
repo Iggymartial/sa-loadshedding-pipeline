@@ -23,10 +23,9 @@ run against real, live data - nothing here is a mock or a stub:
 - [x] Data quality checks + ingestion logging
 - [x] Java (Spring Boot) REST API to serve processed data
 - [x] Automated tests for both the Python pipeline and the Java API
+- [x] Dockerise the Python side (extractor, transform, loader all run as containers)
 
 Remaining:
-- [ ] Dockerise the Python side (MySQL already runs in Docker; the
-      extractor/transform/loader scripts still run locally)
 - [ ] Airflow DAG to schedule extract -> transform -> load automatically
 
 ## Why this data source

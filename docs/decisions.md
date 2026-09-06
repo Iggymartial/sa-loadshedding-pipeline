@@ -355,3 +355,89 @@ multiple language ecosystems (Python at the root, Java under `api/`)
 living side by side, so `cd`-ing into the right subfolder before
 running language-specific tooling matters more here than in a
 single-language project.
+
+## Dockerising the Python pipeline (extractor, transform, loader)
+
+**Decision: one shared Dockerfile/image for all three stages, not three separate images.**
+Reasoning: extractor, transform, and loader already share nearly all
+their dependencies (python-dotenv is common to all three; pandas is
+shared between transform and loader). Building three separate images
+would triple build time and disk usage for near-zero actual isolation
+benefit. Which script runs is decided per-container via `command:` in
+docker-compose.yml, not baked into the image - the same image serves
+all three roles.
+
+**Decision: these are one-shot task services (`docker compose run --rm`), not long-running services (`docker compose up`).**
+Reasoning: extract.py, transform.py, and load.py each do one unit of
+work and exit - unlike mysql, which needs to run continuously. Framing
+them this way now also sets up exactly how Airflow will call these
+same scripts as discrete tasks in the next step of this project - a
+one-shot container running to completion IS what an Airflow task does
+under the hood.
+
+**Decision: no code changes were needed to containerise the Python side.**
+Reasoning: extract.py, transform.py, and load.py all compute their data
+directories via `Path(__file__).resolve().parent.parent`, relative to
+the script's own location - not relative to whatever directory the
+script happened to be launched from. This meant the exact same code
+correctly resolves to `/app/data/raw` inside a container at `/app`,
+with zero changes, as long as the volume mount (`./data:/app/data`)
+lines up with that expectation. Verified this directly by simulating
+the container's file layout (copying the three folders into an
+isolated venv matching the Dockerfile's structure) rather than just
+assuming the path logic would translate correctly.
+
+**Decision: MYSQL_HOST is overridden via docker-compose `environment:`, not by editing .env.**
+Reasoning: `.env` is written for running the scripts directly on the
+host machine, where MySQL is reachable at `127.0.0.1` (its port is
+published to the host). Inside the Docker network, containers reach
+each other by SERVICE NAME (`mysql`), not `127.0.0.1` - inside a
+container, `127.0.0.1` refers to that container itself, not the MySQL
+container. Rather than maintaining two different .env files, the
+loader service overrides just this one variable directly in
+docker-compose.yml. Confirmed this works by testing that
+`python-dotenv`'s `load_dotenv()` never overwrites a variable that's
+already set in the OS environment - which is exactly the mechanism
+Docker's `environment:` block uses - so the override reliably wins.
+
+**Verified before handing off (could not run `docker build` itself - Docker Hub isn't reachable from this environment):**
+- The combined `pip install` across all three requirements files
+  succeeds cleanly with no dependency conflicts (tested in an isolated
+  venv matching a fresh container).
+- Each script's data directory resolves to the correct `/app/data/...`
+  path when run from a simulated `/app` working directory.
+- The `MYSQL_HOST` override mechanism genuinely takes precedence over
+  `.env`, confirmed with a direct test rather than assumed from
+  documentation.
+
+The one thing NOT verified here is the actual `docker build` and
+`docker compose run` execution itself, which needs a real Docker
+daemon - that's the real first test, on the actual development machine.
+
+## Dockerised pipeline confirmed working end-to-end, real data
+
+`docker compose build` succeeded on the first attempt - all three
+requirements files installed together with no conflicts, exactly as
+predicted by the earlier simulation. Then ran the full chain for real:
+
+- `docker compose run --rm extractor` - pulled a genuine live reading,
+  wrote it to the mounted `/app/data/raw/` volume
+- `docker compose run --rm transform` - correctly skipped the 6
+  already-processed files and processed only the new one
+- `docker compose run --rm loader` - visibly waited for MySQL's
+  healthcheck to report healthy (via `depends_on: condition:
+  service_healthy`) before starting, correctly resolved `mysql` as a
+  hostname rather than `127.0.0.1`, and skipped the 6 already-loaded
+  files
+
+Final row count: 14 (7 files x 2 sources) - confirms every idempotency
+guarantee built and tested over earlier sessions (already_loaded() by
+raw_file, transform.py skipping existing parquet files) carried over
+perfectly from running directly on the host to running inside
+containers, with zero code changes required.
+
+This is strong evidence that the earlier design decision - computing
+data directories relative to each script's own file location rather
+than the current working directory - was the right one: it's exactly
+what made "no code changes needed for Docker" true in practice, not
+just in theory.
