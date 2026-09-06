@@ -8,20 +8,26 @@ Built as a solo project to demonstrate the full data engineering lifecycle:
 extraction, storage, transformation, database design, orchestration, and
 serving — using Python, Java, and MySQL as the primary stack.
 
-## Status: Week 1 - Extraction
+## Status: full pipeline working end-to-end (extraction through serving)
 
-This repo is being built incrementally and committed as I go (see commit
-history). Right now it covers just the extraction layer. Planned next:
+This repo has been built incrementally and committed as I go (see
+commit history and docs/decisions.md for the full story, including
+real bugs found and fixed along the way). Every stage below has been
+run against real, live data - nothing here is a mock or a stub:
 
 - [x] Extract national load shedding status from the EskomSePush API
 - [x] Persist raw JSON to a local "data lake" folder, timestamped per run
 - [x] Confirmed working end-to-end against the live API (v3.1)
-- [x] Pandas transformation/cleaning layer
-- [x] MySQL schema + load step
-- [ ] Dockerise the pipeline
-- [ ] Airflow DAG to schedule extraction hourly
-- [ ] Java (Spring Boot) REST API to serve processed data
+- [x] Pandas transformation + data quality validation layer
+- [x] MySQL schema + load step (only loads validated data)
 - [x] Data quality checks + ingestion logging
+- [x] Java (Spring Boot) REST API to serve processed data
+- [x] Automated tests for both the Python pipeline and the Java API
+
+Remaining:
+- [ ] Dockerise the Python side (MySQL already runs in Docker; the
+      extractor/transform/loader scripts still run locally)
+- [ ] Airflow DAG to schedule extract -> transform -> load automatically
 
 ## Why this data source
 
@@ -100,6 +106,20 @@ Airflow DAG orchestrates extract -> transform -> load, scheduled hourly
 
    If anything got flagged along the way, check `data/quality_log.csv`
    to see exactly what failed and why.
+
+8. Run the REST API (needs Java 17+ and Maven installed):
+   ```
+   cd api
+   mvn spring-boot:run
+   ```
+   Then in another terminal:
+   ```
+   curl http://localhost:8080/api/sources
+   curl http://localhost:8080/api/readings/latest
+   curl http://localhost:8080/api/readings
+   curl http://localhost:8080/api/readings/source/eskom
+   curl http://localhost:8080/api/ingestion-runs
+   ```
 
 ## Design decisions
 

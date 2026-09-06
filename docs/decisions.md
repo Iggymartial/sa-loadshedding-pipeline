@@ -273,3 +273,85 @@ Takeaway: writing tests isn't just about proving code that already
 works still works - tracing through "what should happen in this edge
 case" while writing a test is itself a way of finding bugs before a
 user (or a demo audience) does.
+
+## Java REST API (Spring Boot) - serving layer
+
+**Decision: Spring Boot 3.5.x over the newer 4.1.x line.**
+Reasoning: Spring Boot 4.1 is only weeks old at time of writing. Since I
+can't compile or run Java code myself in this environment (Maven
+Central isn't reachable the way PyPI was for the Python side), reducing
+risk by picking the mature, extremely well-documented 3.x line matters
+more than being on the newest release. Java 17 was chosen as the
+baseline for the same reason - the widest compatible floor for
+whatever JDK is actually installed.
+
+**Decision: DTOs (records) for every API response, never raw JPA entities.**
+Reasoning: what the API returns is a deliberate contract, not just
+"whatever the database table happens to contain." If the schema
+changes later (a new column, a renamed field), the API's shape doesn't
+have to change with it unless that's actually intended.
+
+**Decision: `spring.jpa.hibernate.ddl-auto=none` for the real application.**
+Reasoning: the schema is owned entirely by `db/schema.sql`, applied by
+the Python side of the pipeline. Letting Hibernate auto-generate or
+alter tables would create two competing sources of truth for the same
+database - a real anti-pattern when a schema is shared across
+languages/services.
+
+**Decision: H2 in-memory database for tests, real MySQL only for the running app.**
+Reasoning: unit/repository tests should never require Docker to be
+running. Tests use a completely separate `application.properties`
+(under `src/test/resources`) that points at an in-memory database
+Hibernate builds fresh from the entity annotations each run.
+
+**Decision: a correlated subquery (JPQL) for "latest reading per source", not a derived query method.**
+Reasoning: Spring Data's method-name query derivation has no built-in
+concept of "the latest row per group" - that requires an actual query.
+Tested this specifically (not just the simple lookups) because it's
+the one piece of genuinely non-trivial logic in this layer: it's easy
+to write a query that returns ALL readings, or the wrong one per
+source, without a test that inserts two readings for the same source
+and asserts specifically that the LATER one comes back.
+
+**Important limitation, stated honestly:** unlike the Python side of
+this project, I could not compile or run this Java code myself before
+handing it over - Maven Central is not reachable from the environment
+used to build it, only a fixed allow-list of package registries.
+Every file was written carefully against known Spring Boot 3.5/Spring
+Data JPA conventions, but the FIRST real compile and the FIRST real
+`mvn test` run happens on the actual development machine, not before.
+Any errors get debugged the same way Docker/DNS issues were earlier in
+this project: paste the real error, diagnose from there.
+
+## Java REST API confirmed working end-to-end, real data
+
+`mvn clean install` succeeded on the FIRST attempt - all 16 source
+files compiled cleanly, all 4 repository tests passed (including the
+correlated subquery for "latest reading per source"), and the app
+started successfully against the real MySQL database via HikariCP.
+
+Verified all four endpoints against real data:
+- GET /api/sources - returned both seeded sources correctly
+- GET /api/readings/latest - correctly returned exactly ONE reading
+  per source (2 total, not all 12 rows in the table) - proof the
+  correlated subquery genuinely filters to the latest per group rather
+  than just returning everything
+- GET /api/readings - returned all 12 accumulated readings, most
+  recent first
+- GET /api/readings/source/eskom - correctly filtered to only Eskom's
+  6 readings
+- GET /api/ingestion-runs - served the pipeline's own audit log over
+  HTTP, showing every extract/transform/load run as `success`
+
+This is the full four-layer system working together for the first
+time: a real live API -> a Python pipeline (extract, validate, load)
+-> MySQL -> a Java REST API, with nothing mocked or faked at any layer.
+
+**Incident: Maven commands failed with "no POM in this directory".**
+Ran `mvn test` from the project root instead of the `api/` subfolder,
+where `pom.xml` actually lives. Not a bug - Maven always operates
+relative to the current working directory, and this project has
+multiple language ecosystems (Python at the root, Java under `api/`)
+living side by side, so `cd`-ing into the right subfolder before
+running language-specific tooling matters more here than in a
+single-language project.
