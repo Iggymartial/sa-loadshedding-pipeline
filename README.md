@@ -24,9 +24,7 @@ run against real, live data - nothing here is a mock or a stub:
 - [x] Java (Spring Boot) REST API to serve processed data
 - [x] Automated tests for both the Python pipeline and the Java API
 - [x] Dockerise the Python side (extractor, transform, loader all run as containers)
-
-Remaining:
-- [ ] Airflow DAG to schedule extract -> transform -> load automatically
+- [X] Airflow DAG to schedule extract -> transform -> load automatically
 
 ## Why this data source
 
@@ -120,6 +118,17 @@ Airflow DAG orchestrates extract -> transform -> load, scheduled hourly
    curl http://localhost:8080/api/ingestion-runs
    ```
 
+9. Run the pipeline on a schedule with Airflow:
+   ```
+   docker compose up -d airflow
+   ```
+   Wait about a minute for it to fully initialize, then open
+   http://localhost:8081 (login: `admin`, password: check the
+   container logs with `docker compose logs airflow | grep password`
+   the first time it starts). Find the `loadshedding_pipeline` DAG,
+   unpause it, and it will run automatically every hour - or trigger
+   it manually from the UI to test it immediately.
+   
 ## Design decisions
 
 See [docs/decisions.md](docs/decisions.md) for the reasoning behind key

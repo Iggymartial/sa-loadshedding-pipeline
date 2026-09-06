@@ -441,3 +441,59 @@ data directories relative to each script's own file location rather
 than the current working directory - was the right one: it's exactly
 what made "no code changes needed for Docker" true in practice, not
 just in theory.
+
+## Airflow DAG - scheduling the pipeline
+
+**Decision: Airflow standalone mode, not the full Celery quick-start.**
+Reasoning: the official multi-service setup (Postgres + Redis +
+separate scheduler/worker/triggerer/dag-processor/api-server
+containers) is built for production-scale parallelism across many
+DAGs and workers. This project has one DAG with three sequential
+tasks - standalone mode (one container, SQLite metadata store,
+everything in a single process) is officially supported for exactly
+this "local development and learning" case, and adds far less
+operational weight on top of everything else already running
+(MySQL, the pipeline containers, the Java API).
+
+**Decision: BashOperator running the EXISTING scripts, not PythonOperator with reimplemented logic.**
+Reasoning: extract.py, transform.py, and load.py already have clean
+CLI entrypoints returning proper exit codes (0 success, 1 failure) -
+this was a deliberate design choice all the way back in Week 1.
+BashOperator automatically marks an Airflow task as failed when the
+underlying command exits non-zero, which means that exit-code
+discipline built early in this project plugs directly into Airflow's
+own success/failure tracking with zero extra glue code. No pipeline
+logic was rewritten or duplicated for Airflow's sake.
+
+**Decision: a custom Dockerfile extending the official Airflow image, following Airflow's own documented pattern.**
+Reasoning: the pipeline's dependencies (pandas, pyarrow,
+mysql-connector-python) need to be available inside the SAME container
+that runs BashOperator's shell commands. Rather than inventing a
+custom approach, this follows Airflow's own documented method for
+adding requirements: extend the base image, pin apache-airflow itself
+to the same version to prevent pip from touching it, then layer
+additional requirements on top.
+
+**Decision: hourly schedule (`@hourly`).**
+Reasoning: 24 API calls/day stays comfortably under EskomSePush's
+50/day free-tier quota, leaving margin for manual testing runs on top
+of the scheduled ones.
+
+**Verified before handing off - actually installed and tested, not assumed:**
+- Confirmed the correct Airflow 3.x import paths (`airflow.sdk.DAG`,
+  `airflow.providers.standard.operators.bash.BashOperator`) via
+  research, since Airflow 3.x moved several operators out of core into
+  a separate provider package - the older `airflow.operators.bash`
+  import path from most existing tutorials would have failed silently
+  on this version.
+- Installed real Apache Airflow 3.3.1 in an isolated environment
+  (using Airflow's own published constraints file) and genuinely
+  IMPORTED the DAG file with it - not just checked Python syntax.
+  Confirmed: the DAG loads without error, contains exactly the three
+  expected tasks, each with the correct bash command, and the
+  dependency chain (extract -> transform -> load) is wired correctly.
+
+This is a stronger verification bar than the Java API got (which could
+only be syntax-reasoned about, not executed) - Airflow, unlike Maven
+dependencies, is installable via pip from PyPI, which IS reachable
+from this environment.
