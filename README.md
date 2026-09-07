@@ -128,7 +128,13 @@ Airflow DAG orchestrates extract -> transform -> load, scheduled hourly
    the first time it starts). Find the `loadshedding_pipeline` DAG,
    unpause it, and it will run automatically every hour - or trigger
    it manually from the UI to test it immediately.
-   
+
+## How it works
+
+For a plain-English explanation of what this system does and why, see
+[docs/HOW_IT_WORKS.md](docs/how_it_works.md). For the database schema
+design and ER diagram, see [docs/schema.md](docs/SCHEMA.md).
+
 ## Design decisions
 
 See [docs/decisions.md](docs/decisions.md) for the reasoning behind key
